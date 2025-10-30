@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+
+<html lang="ar" dir="rtl">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>تطبيق تسجيل الدخول للفعالية</title>
+
+    <!-- Load Tailwind CSS -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Use Inter font -->
+
+    <style>
+
+        /* Ensuring Inter is the base font */
+
+        body { font-family: 'Inter', sans-serif; direction: rtl; }
+
+    </style>
+
+    <!-- Load Firebase Realtime Database Modules -->
+
+    <script type="module">
+
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+
+        import { getDatabase, ref, push } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-database.js";
+
+
+
+        // --- FIREBASE CONFIGURATION ---
+
+        // NOTE: These credentials are hardcoded for the Realtime Database connection.
+
+        const FIREBASE_CONFIG = {
+
+            apiKey: "AIzaSyB1wqr1Rh8f6O_dLEKO0LQAZdXCXvPVbBE", 
+
+            authDomain: "newstartigy.firebaseapp.com",
+
+            databaseURL: "https://newstartigy-default-rtdb.firebaseio.com",
+
+            projectId: "newstartigy",
+
+            storageBucket: "newstartigy.appspot.com",
+
+            messagingSenderId: "578357284831",
+
+            appId: "1:578357284831:web:7ab9395f24c44f89f4be6a"
+
+        };
+
+        // تم دمج المسار العام والخاص بالجلسة في مسار واحد ثابت:
+
+        const SUBMISSIONS_PATH = 'MAIN_EVENT_LOG/submissions';
+
+
+
+        // Global variables for Firebase services and session ID (no longer used in entry, kept for legacy)
+
+        let db = null;
+
+        let sessionID = 'main_event_submissions'; // قيمة ثابتة جديدة
+
+
+
+        // Function to display messages (replaces alert())
+
+        function showMessage(message, type = 'info') {
+
+            const messageBox = document.getElementById('message-box');
+
+            // Ensure text-right is always present for RTL layout
+
+            messageBox.className = "p-3 rounded-lg text-sm transition-opacity duration-300 text-right";
+
+            messageBox.textContent = message;
+
+            messageBox.style.opacity = '1';
+
+
+
+            if (type === 'success') {
+
+                messageBox.classList.add('bg-green-100', 'text-green-800');
+
+            } else if (type === 'error') {
+
+                messageBox.classList.add('bg-red-100', 'text-red-800');
+
+            } else if (type === 'warning') {
+
+                messageBox.classList.add('bg-yellow-100', 'text-yellow-800');
+
+            } else { // info
+
+                messageBox.classList.add('bg-blue-100', 'text-blue-800');
+
+            }
+
+            // Clear message after 5 seconds
+
+            setTimeout(() => {
+
+                messageBox.style.opacity = '0';
+
+            }, 5000);
+
+        }
+
+
+
+        // Function to initialize Firebase
+
+        function initializeAppAndSession() {
+
+            const header = document.getElementById('app-header');
+
+            
+
+            // 2. Initialize Firebase App
+
+            try {
+
+                const app = initializeApp(FIREBASE_CONFIG);
+
+                db = getDatabase(app);
+
+                
+
+                // Initialization SUCCESS: Change header to green and show ready message
+
+                header.classList.remove('text-white'); 
+
+                header.classList.add('text-green-400'); // Light green for success on dark background
+
+
+
+            } catch (error) {
+
+                console.error("Firebase Initialization Error:", error);
+
+                
+
+                // Initialization FAILURE: Change header to red
+
+                header.classList.remove('text-white');
+
+                header.classList.add('text-red-400');
+
+                // The main error message is suppressed from the user for cleaner UI
+
+            }
+
+        }
+
+        
+
+        // --- SUBMIT LOGIC ---
+
+        // Expose submitEntry to the global scope so onclick can find it
+
+        window.submitEntry = function() {
+
+            const submitButton = document.getElementById('submit-button');
+
+            const nameInput = document.getElementById('name-input');
+
+            const guestName = nameInput.value.trim();
+
+
+
+            // 1. Check if the button is already disabled (i.e., submission in progress)
+
+            if (submitButton.disabled) {
+
+                return; // Ignore the click if a submission is already active
+
+            }
+
+
+
+            if (guestName === "") {
+
+                showMessage("الرجاء إدخال الاسم الثنائي قبل الإرسال.", 'warning');
+
+                return;
+
+            }
+
+            
+
+            // Store original text for restoration
+
+            const originalButtonText = "ارسال | send"; 
+
+            
+
+            // 2. Disable the button and show loading state
+
+            submitButton.disabled = true;
+
+            submitButton.textContent = "جاري الإرسال..."; 
+
+            submitButton.classList.remove('hover:bg-[#008083]');
+
+            submitButton.classList.add('opacity-75', 'cursor-not-allowed', 'bg-[#33a8aa]');
+
+
+
+
+
+            const newEntry = {
+
+                // تم تغيير المفتاح من 'guestName' إلى 'name'
+
+                name: guestName,
+
+                // تم حذف حقل entrySession بالكامل
+
+                timestamp: new Date().toISOString()
+
+            };
+
+
+
+            // نستخدم مسار إرسال واحد الآن
+
+            const logRef = ref(db, SUBMISSIONS_PATH);
+
+            
+
+            // شرط لضمان أن اتصال Firebase متاح
+
+            if (!db) {
+
+                console.error("Firebase is not initialized. Cannot submit data.");
+
+                showMessage("فشل الإرسال. نظام قاعدة البيانات غير جاهز.", 'error');
+
+                
+
+                // إعادة تفعيل الزر في حالة الفشل
+
+                submitButton.disabled = false;
+
+                submitButton.textContent = originalButtonText;
+
+                submitButton.classList.remove('opacity-75', 'cursor-not-allowed', 'bg-[#33a8aa]');
+
+                submitButton.classList.add('hover:bg-[#008083]');
+
+                return;
+
+            }
+
+            
+
+            // --- محاولة الحفظ والانتظار للنجاح قبل التحويل ---
+
+            push(logRef, newEntry)
+
+            .then(() => {
+
+                // SUCCESS: Show success message and transition to Thank You page
+
+                showMessage("تم تسجيل دخولك بنجاح. مرحباً، " + guestName + ".", 'success');
+
+                nameInput.value = ''; 
+
+                
+
+                document.getElementById('check-in-container').classList.add('hidden');
+
+                document.getElementById('thank-you-section').classList.remove('hidden');
+
+            })
+
+            .catch((error) => {
+
+                // FAILURE: Show error message to user and log to console for debugging
+
+                console.error("Data submission error (Firebase/CSP):", error);
+
+                showMessage("فشل الإرسال. يرجى التحقق من اتصال الإنترنت وقواعد أمان Firebase.", 'error'); 
+
+            })
+
+            .finally(() => {
+
+                // 3. Re-enable the button regardless of success or failure
+
+                submitButton.disabled = false;
+
+                submitButton.textContent = originalButtonText;
+
+                submitButton.classList.remove('opacity-75', 'cursor-not-allowed', 'bg-[#33a8aa]');
+
+                submitButton.classList.add('hover:bg-[#008083]');
+
+            });
+
+        };
+
+        // --- END SUBMIT LOGIC ---
+
+
+
+        // Initialize on window load
+
+        window.onload = initializeAppAndSession;
+
+    </script>
+
+</head>
+
+<!-- تم نقل خلفية البطاقة (صورة وتأثيرات) إلى وسم <body> لتغطية الصفحة بالكامل -->
+
+<body class="flex items-center justify-center min-h-screen 
+
+             bg-gray-800 bg-cover bg-center bg-no-repeat bg-[url('https://binkhamis222.github.io/event-entry-app/888.png')]"> 
+
+    
+
+    <!-- حاوية لتقييد عرض المحتوى وجعله يتوسط الشاشة -->
+
+    <div class="w-full max-w-md p-6 md:p-8 rounded-xl mt-[350px]"> <!-- تم تعديل الهامش العلوي من mt-[400px] إلى mt-[350px] لرفع العناصر 50 بكسل -->
+
+
+
+        <!-- 1. MAIN CHECK-IN CONTAINER (Visible by default) -->
+
+        <div id="check-in-container">
+
+            <!-- Header -->
+
+            <h1 id="app-header" class="hidden text-4xl font-extrabold text-center text-white transition-colors duration-300">
+
+                تسجيل الدخول للفعالية
+
+            </h1>
+
+            
+
+            <!-- Message Box -->
+
+            <div id="message-box" class="mb-6 opacity-0 transition-opacity duration-300"></div>
+
+
+
+            <!-- Input Form -->
+
+            <div class="space-y-6"> 
+
+                <div class="mb-[150px]"> <!-- هذا الهامش يفصل حقل الإدخال عن زر الإرسال -->
+
+                    <!-- Label for Tow-part-Name -->
+
+                    <label for="name-input" class="block text-lg font-medium text-white mb-2 flex justify-between items-center text-right">
+
+                        <span>الاسم الثنائي</span>
+
+                        <!-- Tow-part-Name now white -->
+
+                        <span class="text-lg font-medium text-white">Tow-part-Name</span>
+
+                    </label>
+
+                    <input 
+
+                        type="text" 
+
+                        id="name-input" 
+
+                        placeholder="اسم الاسم ..."
+
+                        class="mt-1 block w-full px-5 py-3 border border-gray-300 rounded-full shadow-lg 
+
+                               focus:ring-blue-500 focus:border-blue-500 text-lg transition duration-150 text-right text-gray-800"
+
+                        onkeydown="if(event.key === 'Enter') submitEntry()"
+
+                    >
+
+                </div>
+
+                
+
+                <!-- Submit Button -->
+
+                <button
+
+                    id="submit-button"
+
+                    onclick="submitEntry()"
+
+                    class="w-full flex justify-center py-4 px-4 border border-transparent rounded-full shadow-lg text-lg font-bold text-white 
+
+                           bg-[#00979a] hover:bg-[#008083] focus:outline-none focus:ring-4 focus:ring-offset-2 focus:ring-[#00979a] 
+
+                           transition duration-200 ease-in-out transform hover:scale-[1.01]" 
+
+                >
+
+                    ارسال | send 
+
+                </button>
+
+            </div>
+
+        </div>
+
+
+
+        <!-- 2. THANK YOU SECTION (Hidden by default) -->
+
+        <div id="thank-you-section" 
+
+            class="hidden text-center p-12 md:p-16"> <!-- أبقيت على الحشو لرسالة الشكر لتبدو جيدة -->
+
+            
+
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-20 h-20 mx-auto mb-6 text-green-400">
+
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+
+            </svg>
+
+            <h2 class="text-5xl font-extrabold text-white mb-4">
+
+                شكراً لك!
+
+            </h2>
+
+            <p class="text-lg text-gray-300">
+
+                <!-- تم حذف النص بناءً على طلبك: "تم تسجيل دخولك بنجاح. نتمنى لك فعالية ممتعة." -->
+
+            </p>
+
+        </div>
+
+    </div>
+
+</body>
+
+</html>
